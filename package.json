@@ -1,0 +1,33 @@
+{
+  "name": "bauimperium",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Das Digitale Bau-Imperium - Premium Bau-Marktplatz mit SaaS & Fintech",
+  "workspaces": [
+    "frontend/apps/*",
+    "frontend/packages/*",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run dev -w frontend/apps/bauherren & npm run dev -w frontend/apps/handwerker",
+    "dev:backend": "npm run dev -w backend",
+    "build": "npm run build -w frontend/packages/shared && npm run build -w frontend/packages/ui && npm run build -w frontend/apps/bauherren && npm run build -w frontend/apps/handwerker && npm run build -w backend",
+    "build:frontend": "npm run build -w frontend/packages/shared && npm run build -w frontend/packages/ui && npm run build -w frontend/apps/bauherren && npm run build -w frontend/apps/handwerker",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "npm run test -w backend && npm run test -w frontend/packages/shared",
+    "db:migrate": "npm run db:migrate -w backend",
+    "db:seed": "npm run db:seed -w backend",
+    "db:studio": "npm run db:studio -w backend",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "npm install && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

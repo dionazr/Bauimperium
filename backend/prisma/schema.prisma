@@ -1,0 +1,1026 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USER & AUTHENTICATION MODELS
+// ============================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phone         String?
+  avatarUrl     String?
+  role          UserRole @default(CLIENT)
+  isVerified    Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  clientProfile       ClientProfile?
+  craftsmanProfile    CraftsmanProfile?
+  adminProfile        AdminProfile?
+  sentMessages        Message[]          @relation("Sender")
+  receivedMessages    Message[]          @relation("Receiver")
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  loginAttempts       LoginAttempt[]
+}
+
+enum UserRole {
+  CLIENT
+  CRAFTSMAN
+  ADMIN
+  SUPER_ADMIN
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  ipAddress String?
+  userAgent String?
+  success   Boolean
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+// ============================================================
+// CLIENT (BAUHERR) PROFILE
+// ============================================================
+
+model ClientProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName   String?
+  addressId     String?
+  address       Address? @relation("ClientAddress", fields: [addressId], references: [id])
+  taxId         String?
+  kycStatus     KYCStatus @default(PENDING)
+  kycVerifiedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  projects         Project[]
+  escrowAccounts   EscrowAccount[]
+  reviews          Review[]       @relation("ClientReviews")
+}
+
+// ============================================================
+// CRAFTSMAN (HANDWERKER) PROFILE
+// ============================================================
+
+model CraftsmanProfile {
+  id                    String             @id @default(cuid())
+  userId                String             @unique
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName           String
+  companyLegalForm      String?
+  companyRegistrationNumber String?
+  taxId                 String?
+  addressId             String?
+  address               Address?          @relation("CraftsmanAddress", fields: [addressId], references: [id])
+  description           String?
+  foundedYear           Int?
+  employeeCount         Int?
+  annualRevenue         Decimal?          @db.Decimal(12, 2)
+  website               String?
+  logoUrl               String?
+  coverImageUrl         String?
+  isVerified            Boolean           @default(false)
+  verificationStatus    VerificationStatus @default(PENDING)
+  verifiedAt            DateTime?
+  liabilityInsuranceUrl String?
+  liabilityInsuranceExpiry DateTime?
+  masterCertificateUrl  String?
+  creditRating          Int?              @default(0)
+  creditRatingUpdatedAt DateTime?
+  isPremium             Boolean           @default(false)
+  premiumSince          DateTime?
+  premiumUntil          DateTime?
+  onboardingCompleted   Boolean           @default(false)
+  onboardingStep        Int               @default(0)
+  monthlySubscriptionId String?           @unique
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  craftsmanCategories   CraftsmanCategory[]
+  craftsmanSkills       CraftsmanSkill[]
+  craftsmanCertificates CraftsmanCertificate[]
+  craftsmanReviews      Review[]            @relation("CraftsmanReviews")
+  serviceAreas          ServiceArea[]
+  projects              ProjectAssignment[]
+  projectApplications   ProjectApplication[]
+  timeslots             Timeslot[]
+  invoices              Invoice[]
+  offers                Offer[]
+  subscription          Subscription?        @relation(fields: [monthlySubscriptionId], references: [id])
+  workPhotos            WorkPhoto[]
+  availability          Availability[]
+}
+
+enum VerificationStatus {
+  PENDING
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+model CraftsmanCategory {
+  id          String            @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile  @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    Category          @relation(fields: [categoryId], references: [id])
+  experienceYears Int?
+  isPrimary   Boolean           @default(false)
+  ratePerHour Decimal?          @db.Decimal(10, 2)
+  createdAt   DateTime          @default(now())
+
+  @@unique([craftsmanId, categoryId])
+}
+
+model CraftsmanSkill {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  name        String
+  level       SkillLevel       @default(INTERMEDIATE)
+  createdAt   DateTime         @default(now())
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+  MASTER
+}
+
+model CraftsmanCertificate {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  name        String
+  issuer      String
+  issuedAt    DateTime
+  expiresAt   DateTime?
+  fileUrl     String
+  verified    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+}
+
+// ============================================================
+// ADDRESS
+// ============================================================
+
+model Address {
+  id         String   @id @default(cuid())
+  street     String
+  houseNumber String
+  city       String
+  postalCode String
+  state      String?
+  country    String   @default("DE")
+  lat        Float?
+  lng        Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  clientAddress    ClientProfile?   @relation("ClientAddress")
+  craftsmanAddress CraftsmanProfile? @relation("CraftsmanAddress")
+  projectAddress   Project[]        @relation("ProjectAddress")
+  serviceAreas     ServiceArea[]
+}
+
+// ============================================================
+// CATEGORIES & TRADES (GEWERKE)
+// ============================================================
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  nameDe      String     @unique
+  slug        String     @unique
+  description String?
+  iconUrl     String?
+  parentId    String?
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  craftsmen  CraftsmanCategory[]
+  projects   Project[]
+}
+
+model ServiceArea {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  addressId   String
+  address     Address          @relation(fields: [addressId], references: [id])
+  radiusKm    Int              @default(50)
+  createdAt   DateTime         @default(now())
+
+  @@unique([craftsmanId, addressId])
+}
+
+// ============================================================
+// PROJECT (AUSSCHREIBUNG)
+// ============================================================
+
+model Project {
+  id              String          @id @default(cuid())
+  clientId        String
+  client          ClientProfile   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  voiceNoteUrl    String?
+  status          ProjectStatus   @default(DRAFT)
+  priority        ProjectPriority @default(NORMAL)
+  categoryId      String?
+  category        Category?       @relation(fields: [categoryId], references: [id])
+  addressId       String?
+  address         Address?        @relation("ProjectAddress", fields: [addressId], references: [id])
+  budgetMin       Decimal?        @db.Decimal(12, 2)
+  budgetMax       Decimal?        @db.Decimal(12, 2)
+  budgetType      BudgetType      @default(FIXED)
+  squareMeters    Decimal?        @db.Decimal(10, 2)
+  startDatePreferred Date?
+  endDatePreferred   Date?
+  isUrgent        Boolean         @default(false)
+  isFinancingRequired Boolean     @default(false)
+  aiAnalysisId    String?
+  aiAnalysis      AIAnalysis?     @relation(fields: [aiAnalysisId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  specifications  ProjectSpecification[]
+  media           ProjectMedia[]
+  assignments     ProjectAssignment[]
+  applications    ProjectApplication[]
+  escrowAccounts  EscrowAccount[]
+  milestones      Milestone[]
+  reviews         Review[]
+}
+
+enum ProjectStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  IN_OFFER_PHASE
+  IN_EXECUTION
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ProjectPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum BudgetType {
+  FIXED
+  HOURLY
+  ESTIMATE
+  NEGOTIABLE
+}
+
+model ProjectSpecification {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key         String
+  value       String
+  unit        String?
+  isRequired  Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model ProjectMedia {
+  id        String        @id @default(cuid())
+  projectId String
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      MediaType
+  url       String
+  thumbnailUrl String?
+  fileName  String
+  fileSize  Int?
+  mimeType  String?
+  description String?
+  createdAt DateTime      @default(now())
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO_3D
+  DOCUMENT
+  BLUEPRINT
+  CAD_FILE
+  OTHER
+}
+
+// ============================================================
+// AI ANALYSIS
+// ============================================================
+
+model AIAnalysis {
+  id              String   @id @default(cuid())
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id])
+  rawInput        String?
+  rawInputType    InputType @default(TEXT)
+  confidence      Float?
+  processingTime  Int?
+  resultSpecs     Json?
+  estimatedCosts  Json?
+  estimatedDuration Json?
+  dinNormReferences Json?
+  requiredMaterials Json?
+  errors          Json?
+  warningFlag     Boolean  @default(false)
+  warningMessage  String?
+  modelVersion    String   @default("1.0.0")
+  createdAt       DateTime @default(now())
+
+  projectRelation Project?
+}
+
+enum InputType {
+  TEXT
+  VOICE
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+// ============================================================
+// PROJECT ASSIGNMENT & APPLICATION
+// ============================================================
+
+model ProjectAssignment {
+  id             String             @id @default(cuid())
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  craftsmanId    String
+  craftsman      CraftsmanProfile   @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  status         AssignmentStatus   @default(INVITED)
+  offerId        String?
+  offer          Offer?             @relation(fields: [offerId], references: [id])
+  acceptedAt     DateTime?
+  completedAt    DateTime?
+  craftsmanRating Int?
+  clientRating   Int?
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([projectId, craftsmanId])
+}
+
+enum AssignmentStatus {
+  INVITED
+  APPLIED
+  OFFER_SUBMITTED
+  NEGOTIATING
+  ACCEPTED
+  WORK_IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+model ProjectApplication {
+  id          String             @id @default(cuid())
+  projectId   String
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  craftsmanId String
+  craftsman   CraftsmanProfile   @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  message     String?
+  proposedPrice Decimal?         @db.Decimal(12, 2)
+  proposedStartDate Date?
+  proposedEndDate   Date?
+  status      ApplicationStatus  @default(PENDING)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([projectId, craftsmanId])
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+// ============================================================
+// OFFERS (ANGEBOTE)
+// ============================================================
+
+model Offer {
+  id              String          @id @default(cuid())
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  craftsmanId     String
+  craftsman       CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  offerNumber     String          @unique
+  title           String
+  description     String?
+  totalAmount     Decimal         @db.Decimal(12, 2)
+  taxRate         Decimal         @default(0.19) @db.Decimal(5, 2)
+  netAmount       Decimal         @db.Decimal(12, 2)
+  taxAmount       Decimal         @db.Decimal(12, 2)
+  grossAmount     Decimal         @db.Decimal(12, 2)
+  validUntil      DateTime
+  startDate       Date?
+  endDate         Date?
+  paymentTerms    String?
+  warrantyMonths  Int             @default(60)
+  status          OfferStatus     @default(DRAFT)
+  isAiGenerated   Boolean         @default(false)
+  aiConfidence    Float?
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  items           OfferItem[]
+  assignment      ProjectAssignment?
+  invoice         Invoice?
+  escrowAccount   EscrowAccount?
+}
+
+enum OfferStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  COUNTERED
+  WITHDRAWN
+}
+
+model OfferItem {
+  id          String    @id @default(cuid())
+  offerId     String
+  offer       Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal   @db.Decimal(10, 2)
+  unit        String    @default("Stk")
+  unitPrice   Decimal   @db.Decimal(10, 2)
+  totalPrice  Decimal   @db.Decimal(12, 2)
+  category    String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
+// ============================================================
+// MILESTONES & ESCROW (TREUHAND)
+// ============================================================
+
+model Milestone {
+  id              String        @id @default(cuid())
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  phaseNumber     Int
+  amount          Decimal       @db.Decimal(12, 2)
+  percentage      Decimal       @db.Decimal(5, 2)
+  status          MilestoneStatus @default(PENDING)
+  escrowAccountId String?
+  escrowAccount   EscrowAccount?  @relation(fields: [escrowAccountId], references: [id])
+  startDate       Date?
+  endDate         Date?
+  completedAt     DateTime?
+  verificationVideoUrl String?
+  verificationStatus   VerificationStatus @default(PENDING)
+  aiAnalysisId    String?
+  aiAnalysisResult Json?
+  approvedAt      DateTime?
+  approvedBy      String?
+  releasedAmount  Decimal?      @db.Decimal(12, 2)
+  releasedAt      DateTime?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  VERIFIED
+  APPROVED
+  RELEASED
+  DISPUTED
+  FAILED
+}
+
+model EscrowAccount {
+  id              String           @id @default(cuid())
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientId        String
+  client          ClientProfile    @relation(fields: [clientId], references: [id])
+  offerId         String?
+  offer           Offer?           @relation(fields: [offerId], references: [id])
+  stripeAccountId String?
+  stripePaymentIntentId String?
+  totalAmount     Decimal          @db.Decimal(12, 2)
+  releasedAmount  Decimal          @default(0) @db.Decimal(12, 2)
+  remainingAmount Decimal          @db.Decimal(12, 2)
+  platformFee     Decimal          @default(0) @db.Decimal(12, 2)
+  status          EscrowStatus     @default(PENDING_FUNDING)
+  fundedAt        DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancellationReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  milestones      Milestone[]
+  transactions    EscrowTransaction[]
+}
+
+enum EscrowStatus {
+  PENDING_FUNDING
+  FUNDED
+  PARTIALLY_RELEASED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+model EscrowTransaction {
+  id              String        @id @default(cuid())
+  escrowAccountId String
+  escrowAccount   EscrowAccount @relation(fields: [escrowAccountId], references: [id], onDelete: Cascade)
+  type            TransactionType
+  amount          Decimal       @db.Decimal(12, 2)
+  fee             Decimal?      @default(0) @db.Decimal(12, 2)
+  currency        String        @default("EUR")
+  stripePaymentId String?
+  stripeTransferId String?
+  milestoneId     String?
+  milestone       Milestone?    @relation(fields: [milestoneId], references: [id])
+  status          TransactionStatus @default(PENDING)
+  description     String?
+  metadata        Json?
+  executedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum TransactionType {
+  DEPOSIT
+  MILESTONE_RELEASE
+  PLATFORM_FEE
+  REFUND
+  CANCELLATION
+  PARTIAL_RELEASE
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ============================================================
+// INVOICES (RECHNUNGEN)
+// ============================================================
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  craftsmanId     String
+  craftsman       CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  offerId         String?
+  offer           Offer?        @relation(fields: [offerId], references: [id])
+  projectId       String?
+  project         Project?      @relation(fields: [projectId], references: [id])
+  clientName      String
+  clientAddress   String
+  clientTaxId     String?
+  type            InvoiceType   @default(INVOICE)
+  status          InvoiceStatus @default(DRAFT)
+  netAmount       Decimal       @db.Decimal(12, 2)
+  taxRate         Decimal       @default(0.19) @db.Decimal(5, 2)
+  taxAmount       Decimal       @db.Decimal(12, 2)
+  grossAmount     Decimal       @db.Decimal(12, 2)
+  currency        String        @default("EUR")
+  invoiceDate     DateTime      @default(now())
+  dueDate         DateTime
+  paidAt          DateTime?
+  paymentMethod   String?
+  isGoBDCompliant Boolean       @default(false)
+  pdfUrl          String?
+  qrCodeUrl       String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           InvoiceItem[]
+}
+
+enum InvoiceType {
+  INVOICE
+  CREDIT_NOTE
+  PROFORMA
+  PARTIAL
+  FINAL
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  REMINDED
+  OVERDUE
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  CREDITED
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal  @db.Decimal(10, 2)
+  unit        String   @default("Stk")
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  totalPrice  Decimal  @db.Decimal(12, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ============================================================
+// SUBSCRIPTIONS (SAAS ABO)
+// ============================================================
+
+model Subscription {
+  id              String             @id @default(cuid())
+  craftsmanId     String?
+  craftsman       CraftsmanProfile?  @relation(fields: [craftsmanId], references: [id])
+  stripeSubId     String?
+  planId          String
+  plan            SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status          SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEndsAt     DateTime?
+  cancelledAt     DateTime?
+  cancelAtPeriodEnd Boolean          @default(false)
+  paymentMethodId String?
+  invoices        SubscriptionInvoice[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  TRIALING
+  UNPAID
+}
+
+model SubscriptionPlan {
+  id              String          @id @default(cuid())
+  name            String
+  nameDe          String
+  slug            String          @unique
+  description     String?
+  features        Json
+  priceMonthly    Decimal         @db.Decimal(10, 2)
+  priceYearly     Decimal?        @db.Decimal(10, 2)
+  currency        String          @default("EUR")
+  maxUsers        Int             @default(1)
+  maxProjects     Int?
+  maxInvoices     Int?
+  includesAi      Boolean         @default(false)
+  includesEscrow  Boolean         @default(false)
+  includesErp     Boolean         @default(false)
+  includesTeam    Boolean         @default(false)
+  sortOrder       Int             @default(0)
+  isActive        Boolean         @default(true)
+  isPopular       Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  subscriptions   Subscription[]
+}
+
+model SubscriptionInvoice {
+  id              String       @id @default(cuid())
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  stripeInvoiceId String?
+  amount          Decimal      @db.Decimal(10, 2)
+  currency        String       @default("EUR")
+  status          String
+  pdfUrl          String?
+  paidAt          DateTime?
+  periodStart     DateTime
+  periodEnd       DateTime
+  createdAt       DateTime     @default(now())
+}
+
+// ============================================================
+// REVIEWS (BEWERTUNGEN)
+// ============================================================
+
+model Review {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      ClientProfile @relation("ClientReviews", fields: [authorId], references: [id])
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation("CraftsmanReviews", fields: [craftsmanId], references: [id])
+  rating      Int      @default(5)
+  title       String?
+  description String?
+  categories  Json?
+  isVerified  Boolean  @default(false)
+  response    String?
+  respondedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, craftsmanId])
+}
+
+// ============================================================
+// MESSAGING (CHAT)
+// ============================================================
+
+model Message {
+  id          String   @id @default(cuid())
+  senderId    String
+  sender      User     @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  projectId   String?
+  content     String
+  messageType MessageType @default(TEXT)
+  mediaUrl    String?
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  OFFER
+  MILESTONE
+  SYSTEM
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String?
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+}
+
+enum NotificationType {
+  NEW_PROJECT
+  NEW_OFFER
+  OFFER_ACCEPTED
+  OFFER_REJECTED
+  MILESTONE_COMPLETED
+  MILESTONE_RELEASED
+  PAYMENT_RECEIVED
+  NEW_MESSAGE
+  REVIEW_RECEIVED
+  SUBSCRIPTION_EXPIRING
+  VERIFICATION_STATUS
+  SYSTEM
+}
+
+// ============================================================
+// WORK PHOTOS (ARBEITSPHOTOS)
+// ============================================================
+
+model WorkPhoto {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?         @relation(fields: [projectId], references: [id])
+  url         String
+  thumbnailUrl String?
+  description String?
+  category    String?
+  createdAt   DateTime         @default(now())
+}
+
+// ============================================================
+// AVAILABILITY (VERFÜGBARKEIT)
+// ============================================================
+
+model Availability {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
+  isAvailable Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+}
+
+model Timeslot {
+  id          String           @id @default(cuid())
+  craftsmanId String
+  craftsman   CraftsmanProfile @relation(fields: [craftsmanId], references: [id], onDelete: Cascade)
+  date        DateTime
+  startTime   String
+  endTime     String
+  isBooked    Boolean          @default(false)
+  projectId   String?
+  project     Project?         @relation(fields: [projectId], references: [id])
+  createdAt   DateTime         @default(now())
+}
+
+// ============================================================
+// MATERIAL ORDERS (BAUSTOFF-BESTELLUNGEN)
+// ============================================================
+
+model MaterialOrder {
+  id              String       @id @default(cuid())
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  craftsmanId     String
+  supplierId      String?
+  supplier        MaterialSupplier? @relation(fields: [supplierId], references: [id])
+  orderNumber     String       @unique
+  totalAmount     Decimal      @db.Decimal(12, 2)
+  platformFee     Decimal      @default(0) @db.Decimal(10, 2)
+  status          MaterialOrderStatus @default(PENDING)
+  deliveryDate    Date?
+  deliveryAddress String?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  items           MaterialOrderItem[]
+}
+
+enum MaterialOrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PROCESS
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+model MaterialOrderItem {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       MaterialOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name        String
+  quantity    Decimal       @db.Decimal(10, 2)
+  unit        String
+  unitPrice   Decimal       @db.Decimal(10, 2)
+  totalPrice  Decimal       @db.Decimal(12, 2)
+  category    String?
+  createdAt   DateTime      @default(now())
+}
+
+model MaterialSupplier {
+  id          String             @id @default(cuid())
+  name        String
+  slug        String             @unique
+  description String?
+  logoUrl     String?
+  website     String?
+  commissionRate Decimal         @default(0.05) @db.Decimal(5, 4)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  orders      MaterialOrder[]
+  products    MaterialProduct[]
+}
+
+model MaterialProduct {
+  id          String           @id @default(cuid())
+  supplierId  String
+  supplier    MaterialSupplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  sku         String?
+  category    String?
+  unitPrice   Decimal          @db.Decimal(10, 2)
+  unit        String
+  currency    String           @default("EUR")
+  stockCount  Int?
+  imageUrl    String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// ============================================================
+// ADMIN
+// ============================================================
+
+model AdminProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      AdminRole @default(MODERATOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  actions   AdminAction[]
+}
+
+enum AdminRole {
+  MODERATOR
+  FINANCE
+  OPERATIONS
+  ADMIN
+  SUPER_ADMIN
+}
+
+model AdminAction {
+  id          String     @id @default(cuid())
+  adminId     String
+  admin       AdminProfile @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  actionType  String
+  targetId    String?
+  targetType  String?
+  description String?
+  metadata    Json?
+  createdAt   DateTime   @default(now())
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum KYCStatus {
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  REJECTED
+}

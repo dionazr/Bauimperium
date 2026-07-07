@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Datenbank
+  postgres:
+    image: postgres:16-alpine
+    container_name: bauimperium-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bauimperium
+      POSTGRES_USER: bauimperium
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bauimperium_secret_2024}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bauimperium"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis für Caching & Queues
+  redis:
+    image: redis:7-alpine
+    container_name: bauimperium-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # Backend API (Node.js)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bauimperium-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://bauimperium:${DB_PASSWORD:-bauimperium_secret_2024}@postgres:5432/bauimperium
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-bauimperium-jwt-secret-dev}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/package.json:/app/package.json
+
+  # AI Core (Python)
+  ai-core:
+    build:
+      context: ./ai-core
+      dockerfile: Dockerfile
+    container_name: bauimperium-ai-core
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MODEL_PATH: /app/models
+    depends_on:
+      - redis
+    volumes:
+      - ./ai-core/src:/app/src
+      - ai_models:/app/models
+
+  # Frontend (Next.js) - Bauherren Portal
+  frontend-bauherren:
+    build:
+      context: ./frontend/apps/bauherren
+      dockerfile: Dockerfile
+    container_name: bauimperium-bauherren
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      NEXT_PUBLIC_AI_CORE_URL: http://localhost:5000
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/apps/bauherren:/app
+      - ./frontend/packages:/app/packages
+
+  # Frontend (Next.js) - Handwerker Dashboard
+  frontend-handwerker:
+    build:
+      context: ./frontend/apps/handwerker
+      dockerfile: Dockerfile
+    container_name: bauimperium-handwerker
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      NEXT_PUBLIC_AI_CORE_URL: http://localhost:5000
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/apps/handwerker:/app
+      - ./frontend/packages:/app/packages
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: bauimperium-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./infrastructure/nginx/sites:/etc/nginx/sites-enabled
+    depends_on:
+      - backend
+      - frontend-bauherren
+      - frontend-handwerker
+      - ai-core
+
+volumes:
+  postgres_data:
+  redis_data:
+  ai_models:

@@ -234,7 +234,7 @@ MIT License – siehe [LICENSE](LICENSE) für Details.
 
 ## 👥 Team
 
-- **Dion Azr** – Gründer & CEO
+- **Dion Aziri** – Gründer & CEO
 
 ---
 
